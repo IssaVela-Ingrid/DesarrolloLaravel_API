@@ -3,20 +3,30 @@
 namespace App\Http\Requests\Users;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule; // ¡Importar la clase Rule es fundamental!
+use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\Auth; // Necesario para la autorización
 
 class UsuarioUpdateRequest extends FormRequest
 {
     /**
      * Determina si el usuario (administrador) está autorizado a realizar esta solicitud.
-     * Siempre es true porque la autorización real (autenticación JWT) la maneja el middleware en el controlador.
+     * Esta acción solo debe ser permitida para un usuario que ya sea administrador.
      *
      * @return bool
      */
     public function authorize(): bool
     {
-        // Cambiar a true para permitir que la validación proceda
-        return true; 
+        // === MEJORA DE SEGURIDAD: Solo si el usuario es un administrador ===
+        $user = Auth::guard('api')->user();
+
+        if (!$user) {
+            return false;
+        }
+
+        // Asumimos que el usuario debe tener el rol 'admin' para actualizar a otros usuarios.
+        // Si la ruta es para que el propio usuario se actualice, la lógica cambiaría
+        // (ej: return $user->id === $this->route('usuario') || $user->rol === 'admin';)
+        return $user->rol === 'admin'; 
     }
 
     /**
@@ -45,7 +55,11 @@ class UsuarioUpdateRequest extends FormRequest
             ],
             
             // La clave es opcional, pero si se envía, debe cumplir con el mínimo.
+            // Es 'clave' para mantener la coherencia con el modelo Usuario.
             'clave' => 'sometimes|string|min:6',
+            
+            // Opcional: Si el administrador puede cambiar el rol
+            'rol' => 'sometimes|string|in:admin,normal', 
         ];
     }
     
@@ -60,6 +74,7 @@ class UsuarioUpdateRequest extends FormRequest
             'correo.email' => 'El formato del correo electrónico no es válido.',
             'correo.unique' => 'Este correo electrónico ya se encuentra en uso por otro usuario.',
             'clave.min' => 'La nueva contraseña debe tener al menos 6 caracteres.',
+            'rol.in' => 'El rol proporcionado no es válido. Debe ser "admin" o "normal".',
         ];
     }
 }

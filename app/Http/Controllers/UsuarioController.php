@@ -2,145 +2,202 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\User; // Usamos 'User' por convención, si tu modelo se llama 'Usuario' cámbialo aquí.
-// Eliminamos la importación de Registro, ya que el Trait la maneja internamente
-// use App\Models\Registro; 
+use App\Models\Usuario;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
-// Importamos y usaremos el Trait
-use App\Http\Traits\LogActionTrait; 
-// Aunque no lo has proporcionado, es una buena práctica:
-use App\Http\Requests\UsuarioRequest; 
-use Validator; // Usamos la Facade directamente para la validación en update()
+use App\Http\Traits\LogActionTrait;
 
 class UsuarioController extends Controller
 {
-    // 1. Usamos el Trait para heredar el método logAction()
+    // Usa el Trait para loguear acciones en la base de datos
     use LogActionTrait;
 
     /**
-     * Constructor. Protege TODOS los métodos del CRUD. 
-     * El registro público (store) debe ser manejado por AuthController.
+     * Constructor. Protege TODOS los métodos del CRUD.
      */
     public function __construct()
     {
-        // Todos los métodos de CRUD de UsuarioController requieren autenticación JWT.
+        // Todos los métodos de CRUD requieren autenticación JWT.
         $this->middleware('auth:api');
     }
 
-    // 2. ELIMINAMOS la función logAction() duplicada, ahora heredada del Trait
+    /**
+     * Lógica de Autorización de Administrador.
+     * Reutilizable para cualquier método que requiera permisos de administrador.
+     * @return \Illuminate\Http\JsonResponse|null
+     */
+    protected function checkAdminAuthorization()
+    {
+        $user = Auth::guard('api')->user();
+        // Verifica si el usuario está autenticado y tiene el rol 'admin'
+        if (!$user || !$user->isAdmin()) {
+            return response()->json(['message' => 'Acceso no autorizado. Se requiere rol de administrador.'], 403);
+        }
+        return null; // Devuelve null si la autorización es exitosa
+    }
 
     /**
-     * Muestra una lista paginada de todos los usuarios (solo para Administradores).
-     * URL: GET /api/usuarios (Protegido)
+     * Muestra una lista de todos los usuarios (Solo Admin).
+     * URL: GET /api/usuarios
      */
     public function index()
     {
-        // 1. Implementación de paginación para eficiencia
-        // Asegúrate de usar el modelo correcto (User o Usuario).
-        $usuarios = User::orderBy('nombre', 'asc')->paginate(10); 
+        // 1. Autorización de acceso: Solo administradores
+        if ($response = $this->checkAdminAuthorization()) {
+            return $response;
+        }
         
-        // 2. Registrar la acción: Quién vio la lista
-        $this->logAction(Auth::guard('api')->id());
-
-        // 3. Retornar la colección de usuarios
-        return response()->json([
-            'status' => 'success',
-            'data' => $usuarios
-        ], 200);
-    }
-    
-    /**
-     * Almacena un nuevo usuario.
-     * ⚠️ NOTA: Esta ruta solo debería ser usada por un administrador.
-     * Si necesitas registro público, usa AuthController::register.
-     * Usamos UsuarioRequest para la validación.
-     * URL: POST /api/usuarios (Protegido)
-     */
-    public function store(UsuarioRequest $request)
-    {
-        // Validación asegurada por UsuarioRequest
-
         try {
-            $usuario = User::create([
-                'nombre' => $request->nombre,
-                'correo' => $request->correo,
-                // Es CRÍTICO hashear la clave, ya que el modelo User no lo hace automáticamente sin un Mutator/Cast
-                'password' => Hash::make($request->clave), 
-            ]);
-
-            // Registrar la acción: Quién creó este nuevo usuario
-            $this->logAction(Auth::guard('api')->id());
+            // Limita la cantidad de usuarios para evitar sobrecarga y los pagina.
+            $usuarios = Usuario::orderBy('id', 'desc')->paginate(20);
+            
+            // 2. Loguear la acción del administrador
+            $this->logAction(
+                'read_all_users', 
+                'Administrador recuperó la lista de todos los usuarios.', 
+                Auth::guard('api')->id()
+            );
 
             return response()->json([
                 'status' => 'success',
-                'message' => 'Usuario creado exitosamente por administrador.',
-                'data' => $usuario
-            ], 201);
+                'message' => 'Lista de usuarios recuperada exitosamente.',
+                'data' => $usuarios
+            ]);
         } catch (\Exception $e) {
-             Log::error("Error al crear usuario en store de UsuarioController: " . $e->getMessage());
-             return response()->json(['status' => 'error', 'message' => 'Error al crear el usuario.'], 500);
+            Log::error("Error al obtener lista de usuarios: " . $e->getMessage());
+            return response()->json(['message' => 'Error del servidor al obtener usuarios.'], 500);
         }
     }
 
     /**
-     * Muestra la información de un usuario específico.
-     * URL: GET /api/usuarios/{id} (Protegido)
+     * Almacena un nuevo usuario (Solo Admin puede asignar el rol).
+     * NOTA: Este es para el CRUD de Admin. 'register' es para el registro público.
+     * URL: POST /api/usuarios
+     */
+    public function store(Request $request)
+    {
+        // 1. Autorización de acceso: Solo administradores
+        if ($response = $this->checkAdminAuthorization()) {
+            return $response;
+        }
+
+        $validator = Validator::make($request->all(), [
+            'nombre' => 'required|string|between:2,100',
+            'correo' => 'required|email|unique:usuarios,correo',
+            // Opcionalmente puedes requerir 'clave_confirmation'
+            'clave' => 'required|string|min:6', 
+            'rol' => 'required|string|in:admin,user', // El admin debe especificar el rol
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json($validator->errors(), 400);
+        }
+
+        $usuario = Usuario::create(array_merge(
+            $validator->validated(),
+            // CRÍTICO: Usamos 'clave' y Hash::make para la columna de contraseña.
+            ['clave' => Hash::make($request->clave)] 
+        ));
+
+        // 2. Loguear la acción
+        $this->logAction(
+            'create_user_admin', 
+            'Administrador creó un nuevo usuario ID: ' . $usuario->id . ' con rol: ' . $usuario->rol, 
+            Auth::guard('api')->id()
+        );
+
+        return response()->json([
+            'message' => 'Usuario creado exitosamente por administrador',
+            'usuario' => $usuario
+        ], 201);
+    }
+
+    /**
+     * Muestra un usuario específico.
+     * El usuario puede ver su propio perfil; el admin puede ver cualquiera.
+     * URL: GET /api/usuarios/{id}
      */
     public function show(string $id)
     {
-        $usuario = User::find($id);
+        $usuario = Usuario::find($id);
+        $currentUser = Auth::guard('api')->user();
 
         if (!$usuario) {
             return response()->json(['message' => 'Usuario no encontrado'], 404);
         }
 
-        // Registrar la acción: Quién vio el detalle
-        $this->logAction(Auth::guard('api')->id());
+        // 1. Autorización: Solo puede ver su perfil O si es un administrador
+        if ($currentUser->id != $id && !$currentUser->isAdmin()) {
+            return response()->json(['message' => 'Acceso no autorizado para ver este perfil.'], 403);
+        }
 
-        return response()->json($usuario);
+        // 2. Loguear la acción
+        $logType = ($currentUser->id == $id) ? 'read_own_profile' : 'read_user_profile_admin';
+        $logMessage = "Usuario ID: {$currentUser->id} leyó perfil ID: {$id}";
+        $this->logAction($logType, $logMessage, $currentUser->id);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $usuario
+        ]);
     }
 
     /**
-     * Actualiza la información de un usuario específico.
-     * URL: PUT/PATCH /api/usuarios/{id} (Protegido)
+     * Actualiza un usuario específico.
+     * El usuario puede actualizar su propio perfil; el admin puede actualizar cualquiera.
+     * URL: PUT/PATCH /api/usuarios/{id}
      */
     public function update(Request $request, string $id)
     {
-        $usuario = User::find($id);
+        $usuario = Usuario::find($id);
+        $currentUser = Auth::guard('api')->user();
 
         if (!$usuario) {
             return response()->json(['message' => 'Usuario no encontrado para actualizar'], 404);
         }
 
-        // 2. Validar los datos de entrada
-        // Usamos Request aquí por simplicidad al ser PATCH/PUT
+        // 1. Autorización: Solo puede actualizar su perfil O si es un administrador
+        if ($currentUser->id != $id && !$currentUser->isAdmin()) {
+            return response()->json(['message' => 'Acceso no autorizado para actualizar este perfil.'], 403);
+        }
+
+        // 2. Validación de la Solicitud
         $validator = Validator::make($request->all(), [
             'nombre' => 'sometimes|required|string|between:2,100',
-            // Importante: ignorar el propio ID del usuario para la validación de unicidad
-            'correo' => 'sometimes|required|email|unique:users,correo,' . $id,
+            // Regla unique ajustada: ignora el ID del usuario actual.
+            'correo' => 'sometimes|required|email|unique:usuarios,correo,' . $id, 
             'clave' => 'sometimes|required|string|min:6',
+            // Solo el admin puede cambiar el rol
+            'rol' => 'sometimes|required|string|in:admin,user', 
         ]);
 
         if ($validator->fails()) {
             return response()->json($validator->errors(), 400);
         }
         
-        $data = $request->only(['nombre', 'correo']);
+        $data = $request->only(['nombre', 'correo', 'rol']);
 
-        // 3. Hashear la clave si se proporciona
+        // Hashear la clave si se proporciona
         if ($request->has('clave')) {
-            // El campo de la base de datos debe ser 'password' en el modelo User estándar.
-            // Si usas 'clave' en tu BD, ajusta esto. Aquí asumo 'password' para el hash.
-            $data['password'] = Hash::make($request->clave);
+            $data['clave'] = Hash::make($request->clave);
         }
 
+        // Si el usuario NO es admin, se elimina 'rol' de los datos a actualizar para prevenir auto-elevación
+        if (!$currentUser->isAdmin() && isset($data['rol'])) {
+            unset($data['rol']);
+        }
+        
         $usuario->update($data);
 
-        // 4. Registrar la acción
-        $this->logAction(Auth::guard('api')->id());
+        // 3. Loguear la acción
+        $this->logAction(
+            'update_profile', 
+            'Usuario ID: ' . $currentUser->id . ' actualizó perfil ID: ' . $usuario->id . '. Campos actualizados: ' . implode(', ', array_keys($data)), 
+            $currentUser->id
+        );
 
         return response()->json([
             'message' => 'Usuario actualizado exitosamente',
@@ -149,21 +206,37 @@ class UsuarioController extends Controller
     }
 
     /**
-     * Elimina un usuario específico.
-     * URL: DELETE /api/usuarios/{id} (Protegido)
+     * Elimina un usuario específico (Solo Admin).
+     * URL: DELETE /api/usuarios/{id}
      */
     public function destroy(string $id)
     {
-        $usuario = User::find($id);
+        // 1. Autorización de acceso: Solo administradores
+        if ($response = $this->checkAdminAuthorization()) {
+            return $response;
+        }
+
+        $usuario = Usuario::find($id);
+        $currentUser = Auth::guard('api')->user();
 
         if (!$usuario) {
             return response()->json(['message' => 'Usuario no encontrado para eliminar'], 404);
         }
 
+        // Prohibir que un admin se auto-elimine (por seguridad)
+        if ($usuario->id == $currentUser->id) {
+            return response()->json(['message' => 'No puedes eliminar tu propia cuenta de administrador a través del CRUD.'], 403);
+        }
+
+        $usuarioId = $usuario->id;
         $usuario->delete();
 
-        // 3. Registrar la acción
-        $this->logAction(Auth::guard('api')->id());
+        // 2. Loguear la acción
+        $this->logAction(
+            'delete_user_admin', 
+            'Administrador ID: ' . $currentUser->id . ' eliminó usuario ID: ' . $usuarioId, 
+            $currentUser->id
+        );
 
         return response()->json(['message' => 'Usuario eliminado exitosamente']);
     }

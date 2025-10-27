@@ -3,16 +3,30 @@
 namespace App\Http\Requests\Users;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Auth;
 
 class UsuarioStoreRequest extends FormRequest
 {
     /**
      * Determina si el usuario (administrador) está autorizado a realizar esta solicitud.
-     * @return bool
+     * * Esta acción solo debe ser permitida para un usuario que ya sea administrador
+     * y esté intentando crear otro usuario (o un administrador normal).
+     * * @return bool
      */
     public function authorize(): bool
     {
-        return true;
+        // === MEJORA DE SEGURIDAD ===
+        // 1. Verificar si hay un usuario autenticado.
+        $user = Auth::guard('api')->user();
+
+        if (!$user) {
+            return false;
+        }
+
+        // 2. Verificar el rol. Asumiendo que el campo 'rol' existe en la tabla 'usuarios'
+        // y que el rol de administrador es 'admin'.
+        // Si tu lógica de roles es más compleja, ajústala aquí (ej: $user->is_admin).
+        return $user->rol === 'admin'; 
     }
 
     /**
@@ -25,7 +39,8 @@ class UsuarioStoreRequest extends FormRequest
             'nombre' => 'required|string|max:255',
             // Debe ser único en la tabla 'usuarios'
             'correo' => 'required|string|email|max:255|unique:usuarios,correo',
-            'clave' => 'required|string|min:6',
+            // Corregido para usar 'clave' por coherencia.
+            'clave' => 'required|string|min:6', 
         ];
     }
 }

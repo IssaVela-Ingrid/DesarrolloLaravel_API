@@ -2,118 +2,99 @@
 
 namespace App\Http\Controllers;
 
-// Importamos el Trait para heredar la funcionalidad de logAction()
-use App\Http\Traits\LogActionTrait; 
-use App\Models\Registro;
-use App\Models\Usuario; // Importamos el modelo Usuario para contar el total de usuarios (asumiendo que es el modelo User/Usuario real)
+use App\Models\Usuario;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log; // Aseguramos el uso de Log
+use Illuminate\Support\Facades\Log;
 
+/**
+ * Controlador para generar estadísticas y métricas del sistema, 
+ * enfocándose en el registro de usuarios.
+ */
 class EstadisticasController extends Controller
 {
-    // Usamos el Trait para heredar el método logAction()
-    use LogActionTrait;
-
     /**
-     * Constructor. Todos los métodos de estadísticas deben ser protegidos.
+     * Constructor. Aplica middlewares de seguridad y autorización.
      */
     public function __construct()
     {
-        $this->middleware('auth:api');
-    }
+        // 1. Requiere un token JWT válido para acceder a cualquier método.
+        $this->middleware('auth:api'); 
 
-    // ELIMINAMOS la función logAction() duplicada. Ahora se hereda del Trait.
-    // protected function logAction($userId) { ... }
-    
-    /**
-     * Genera estadísticas globales (KPIs de alto nivel).
-     * Incluye el conteo total de usuarios y el conteo total de registros de acciones.
-     * URL: GET /api/estadisticas/global (Protegido)
-     */
-    public function getGlobalStats()
-    {
-        // Registrar la acción
-        $this->logAction(Auth::guard('api')->id());
+        // 2. Autorización: Solo el rol 'admin' puede ver las estadísticas.
+        $this->middleware(function ($request, $next) {
+            $user = Auth::guard('api')->user();
 
-        // 1. Obtener conteo total de usuarios
-        $totalUsuarios = Usuario::count();
-
-        // 2. Obtener conteo total de registros/acciones
-        $totalRegistros = Registro::count();
-
-        // 3. Retornar el resultado estructurado
-        return response()->json([
-            'message' => 'Estadísticas globales obtenidas exitosamente',
-            'data' => [
-                'total_usuarios' => $totalUsuarios,
-                'total_registros_acciones' => $totalRegistros,
-            ]
-        ]);
+            // Si no hay usuario o el rol no es 'admin', se deniega el acceso.
+            if (!$user || $user->rol !== 'admin') {
+                 return response()->json(['message' => 'Acceso no autorizado. Se requiere rol de administrador para ver las estadísticas.'], 403);
+            }
+            return $next($request);
+        });
     }
 
 
     /**
-     * Genera estadísticas de usuarios registrados por día, semana y mes.
-     * La lógica se basa en la tabla 'registros' y sus timestamps de creación.
-     * URL: GET /api/estadisticas/registros (Protegido)
+     * Obtiene estadísticas de registro de usuarios agrupadas por día, semana y mes.
+     * URL: GET /api/estadisticas/registro-usuarios
+     * * @return \Illuminate\Http\JsonResponse
      */
-    public function getRegistrosStats(Request $request)
+    public function getRegistroStats()
     {
-        // 1. Obtener la fecha y hora actual para los cálculos
-        $now = now(); 
-        
-        // Registrar la acción al inicio, ya que el cálculo puede ser costoso
-        $this->logAction(Auth::guard('api')->id());
+        try {
+            // 1. Estadísticas de registro por DÍA (Últimos 7 días)
+            // Se agrupa por la fecha de creación.
+            $registrosPorDia = Usuario::select(
+                DB::raw('DATE(created_at) as fecha'),
+                DB::raw('COUNT(*) as total')
+            )
+            ->where('created_at', '>=', now()->subDays(7)) // Filtra los últimos 7 días
+            ->groupBy('fecha')
+            ->orderBy('fecha', 'asc')
+            ->get();
 
-        // =========================================================================
-        // 2. CÁLCULO DE REGISTROS POR DÍA (Últimos 7 Días)
-        // =========================================================================
-        $registrosPorDia = Registro::select(
-             DB::raw('DATE(created_at) as fecha'),
-             DB::raw('COUNT(id) as cantidad')
-           )
-           ->where('created_at', '>=', $now->copy()->subDays(7)) // Filtra los últimos 7 días
-           ->groupBy('fecha')
-           ->orderBy('fecha', 'asc')
-           ->get();
+            // 2. Estadísticas de registro por SEMANA (Últimas 8 semanas)
+            // NOTA: YEARWEEK() es una función de MySQL. Esto funciona con MySQL/PostgreSQL.
+            $registrosPorSemana = Usuario::select(
+                DB::raw('YEARWEEK(created_at, 1) as periodo'), // '1' indica que la semana comienza en Lunes
+                DB::raw('COUNT(*) as total')
+            )
+            ->where('created_at', '>=', now()->subWeeks(8)) // Filtra las últimas 8 semanas
+            ->groupBy('periodo')
+            ->orderBy('periodo', 'asc')
+            ->get();
 
-        // =========================================================================
-        // 3. CÁLCULO DE REGISTROS POR SEMANA (Últimas 4 Semanas)
-        // =========================================================================
-        // Nota: Se utiliza YEARWEEK(created_at, 1) para agrupar por semana del año
-        $registrosPorSemana = Registro::select(
-             DB::raw('YEARWEEK(created_at, 1) as semana'), // Agrupa por el número de semana
-             DB::raw('COUNT(id) as cantidad')
-           )
-           ->where('created_at', '>=', $now->copy()->subWeeks(4)) // Filtra las últimas 4 semanas
-           ->groupBy('semana')
-           ->orderBy('semana', 'asc')
-           ->get();
+            // 3. Estadísticas de registro por MES (Últimos 6 meses)
+            // Se agrupa por Año y Mes para evitar conflictos entre años.
+            $registrosPorMes = Usuario::select(
+                DB::raw('YEAR(created_at) as anio'),
+                DB::raw('MONTH(created_at) as mes'),
+                DB::raw('COUNT(*) as total')
+            )
+            ->where('created_at', '>=', now()->subMonths(6)) // Filtra los últimos 6 meses
+            ->groupBy('anio', 'mes')
+            ->orderBy('anio', 'asc')
+            ->orderBy('mes', 'asc')
+            ->get();
 
 
-        // =========================================================================
-        // 4. CÁLCULO DE REGISTROS POR MES (Últimos 6 Meses)
-        // =========================================================================
-        // Nota: Se utiliza DATE_FORMAT para agrupar por el año y mes
-        $registrosPorMes = Registro::select(
-             DB::raw("DATE_FORMAT(created_at, '%Y-%m') as mes"),
-             DB::raw('COUNT(id) as cantidad')
-           )
-           ->where('created_at', '>=', $now->copy()->subMonths(6)) // Filtra los últimos 6 meses
-           ->groupBy('mes')
-           ->orderBy('mes', 'asc')
-           ->get();
-        
-        // 5. Retornar el resultado estructurado
-        return response()->json([
-            'message' => 'Estadísticas de registros obtenidas exitosamente',
-            'data' => [
-                'por_dia' => $registrosPorDia,
-                'por_semana' => $registrosPorSemana,
-                'por_mes' => $registrosPorMes,
-            ]
-        ]);
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Estadísticas de registros de usuarios recuperadas exitosamente.',
+                'data' => [
+                    'por_dia_ultimos_7' => $registrosPorDia,
+                    'por_semana_ultimas_8' => $registrosPorSemana,
+                    'por_mes_ultimos_6' => $registrosPorMes,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("Error al obtener estadísticas de registros: " . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error al obtener estadísticas de registros: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 }

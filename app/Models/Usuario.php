@@ -3,23 +3,26 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User;
+use Illuminate\Foundation\Auth\User as Authenticatable; // Cambiado a Authenticatable para claridad
 use Illuminate\Notifications\Notifiable;
 use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject; 
 use App\Models\Registro; 
 
 // Renombrado de User a Usuario
-class Usuario extends User implements JWTSubject 
+class Usuario extends Authenticatable implements JWTSubject 
 {
     use HasFactory, Notifiable;
 
     // Nombre de la tabla: 'usuarios'
     protected $table = 'usuarios'; 
+    protected $primaryKey = 'id';
+    public $timestamps = true; 
 
     protected $fillable = [
-        'nombre', // Corregido para usar 'nombre' como se ve en la base de datos
+        'nombre', 
         'correo',
         'clave', // Usa 'clave' para la contraseña
+        'rol',   // Campo para la autorización (rol por defecto 'user')
     ];
 
     protected $hidden = [
@@ -29,10 +32,9 @@ class Usuario extends User implements JWTSubject
 
     protected function casts(): array
     {
-        return [
-            // 'email_verified_at' => 'datetime', // ELIMINADO: Esta columna no existe en la tabla 'usuarios'.
-            'clave' => 'hashed', // Asegura que 'clave' se hashee al guardar
-        ];
+        // ¡CRÍTICO! ELIMINADO: 'clave' => 'hashed', 
+        // JWT/Auth manejan el hash a través de getAuthPassword() y Hash::make en el controlador.
+        return [];
     }
     
     // ------------------------------------------------------------------
@@ -44,7 +46,7 @@ class Usuario extends User implements JWTSubject
      * (¡Necesario para usar 'clave' en lugar del default 'password'!)
      * @return string
      */
-    public function getAuthPassword()
+    public function getAuthPassword(): string
     {
         // Indica que 'clave' es el campo de contraseña
         return $this->clave;
@@ -54,20 +56,42 @@ class Usuario extends User implements JWTSubject
     // Métodos de JWTSubject
     // ------------------------------------------------------------------
     
-    public function getJWTIdentifier()
+    public function getJWTIdentifier(): mixed
     {
         return $this->getKey();
     }
 
-    public function getJWTCustomClaims()
+    public function getJWTCustomClaims(): array
     {
-        return [];
+        // Añade el ID y el rol al token para que el frontend pueda leerlos
+        return [
+            'user_id' => $this->id,
+            'rol' => $this->rol,
+        ];
     }
     
-    // Relación con Registros
+    // ------------------------------------------------------------------
+    // Relaciones
+    // ------------------------------------------------------------------
+
+    /**
+     * Relación con Registros (logs de acciones).
+     */
     public function registros()
     {
         // El modelo Registro usa 'id_usuario' como clave foránea
         return $this->hasMany(Registro::class, 'id_usuario');
+    }
+
+    // ------------------------------------------------------------------
+    // Helpers de Roles
+    // ------------------------------------------------------------------
+
+    /**
+     * Verifica si el usuario tiene rol de 'admin'.
+     */
+    public function isAdmin(): bool
+    {
+        return $this->rol === 'admin';
     }
 }

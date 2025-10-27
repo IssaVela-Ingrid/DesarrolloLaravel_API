@@ -4,6 +4,8 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\UsuarioController;
 use App\Http\Controllers\EstadisticasController;
+use App\Http\Controllers\ComunicacionController;
+use App\Http\Controllers\RegistroController; // Asegurar que RegistroController esté importado
 
 /*
 |--------------------------------------------------------------------------
@@ -11,60 +13,64 @@ use App\Http\Controllers\EstadisticasController;
 |--------------------------------------------------------------------------
 |
 | Estas rutas se cargan por el RouteServiceProvider con el middleware 'api',
-| que es stateless (sin sesiones ni cookies) y resuelve todos los conflictos.
+| el cual es stateless y aplica a todas las rutas dentro de este archivo.
+| YA INCLUYE el prefijo /api/.
 |
 */
 
 // =========================================================================
-// RUTA BASE (http://127.0.0.1:8000/)
+// RUTA BASE (http://127.0.0.1:8000/) - No usa el prefijo 'api'
 // =========================================================================
-// Se define fuera del prefijo 'api' para responder a la raíz.
-Route::prefix('')->group(function () {
-    Route::get('/', function () {
-        return response()->json([
-            'status' => 'success',
-            'message' => 'API REST de Usuarios y Logs funcionando.',
-            'info' => 'Usa la ruta /api/auth/login para empezar.'
-        ], 200);
-    });
+Route::get('/', function () {
+    return response()->json([
+        'status' => 'success',
+        'message' => 'API REST de Usuarios, Logs y Comunicación funcionando.',
+        'info' => 'Usa la ruta /api/auth/login para empezar.'
+    ], 200);
 });
 
 
 // =========================================================================
-// GRUPO PRINCIPAL DE API (Prefijo /api)
+// GRUPO PRINCIPAL DE API (El prefijo 'api' es aplicado automáticamente por Laravel)
+// Las rutas internas aquí se convierten en: /api/{...}
 // =========================================================================
 
-Route::prefix('api')->group(function () {
-    
-    // --- RUTAS DE AUTENTICACIÓN (PÚBLICAS Y PROTEGIDAS) ---
+// --- 1. RUTAS PÚBLICAS DE AUTENTICACIÓN (NO requieren token) ---
+// URL RESULTANTE: /api/auth/{login, register}
+Route::controller(AuthController::class)->prefix('auth')->group(function () {
+    Route::post('login', 'login');
+    Route::post('register', 'register');
+});
+
+// --- 2. RUTAS PROTEGIDAS (Requieren Token JWT: 'auth:api') ---
+Route::middleware('auth:api')->group(function () {
+
+    // --- 2.1. Autenticación Protegida ---
+    // URL RESULTANTE: /api/auth/{logout, refresh, me}
     Route::controller(AuthController::class)->prefix('auth')->group(function () {
-        
-        // PÚBLICAS: Iniciar sesión y Registrar (NO requiere token)
-        // URL: POST /api/auth/login
-        Route::post('login', 'login');
-        // URL: POST /api/auth/register
-        Route::post('register', 'register');
+        Route::post('logout', 'logout');
+        Route::post('refresh', 'refresh');
+        Route::post('me', 'me');
     });
 
-    // --- RUTAS PROTEGIDAS (Requieren Token JWT) ---
-    Route::middleware('auth:api')->group(function () {
+    // --- 2.2. Rutas de Administrador (Requieren Token JWT y Rol 'admin') ---
+    // Todas estas rutas tendrán el middleware 'admin' adicional.
+    Route::middleware('admin')->group(function () {
+
+        // CRUD de Usuarios (Resource) - URL RESULTANTE: /api/usuarios
+        Route::apiResource('usuarios', UsuarioController::class)->except(['store']);
         
-        // Autenticación Protegida (Continuación del grupo 'auth')
-        Route::controller(AuthController::class)->prefix('auth')->group(function () {
-            // URL: POST /api/auth/logout
-            Route::post('logout', 'logout');
-            // URL: POST /api/auth/refresh
-            Route::post('refresh', 'refresh');
+        // Rutas de Registros (Solo index)
+        // URL RESULTANTE: /api/registros
+        Route::get('registros', [RegistroController::class, 'index']);
+
+        // Estadísticas - URL RESULTANTE: /api/estadisticas
+        Route::controller(EstadisticasController::class)->prefix('estadisticas')->group(function () {
+            Route::get('global', 'getGlobalStats');
+            Route::get('acciones', 'getRegistrosStats');
         });
         
-        // CRUD de Usuarios (User Resource)
-        // Rutas protegidas: index, show, update, destroy
-        // La ruta POST /api/usuarios (store) es ahora la ruta de Registro/Creación 
-        // de Usuario, y debe ser accesible para administradores, NO para registro público.
-        Route::apiResource('usuarios', UsuarioController::class)->except(['create', 'edit']);
-
-        // Requisito: Estadísticas
-        // URL: GET /api/estadisticas/registros
-        Route::get('estadisticas/registros', [EstadisticasController::class, 'getRegistrosStats']);
+        // Comunicación - URL RESULTANTE: /api/comunicacion/enviar
+        Route::post('comunicacion/enviar', [ComunicacionController::class, 'enviarCorreo']);
     });
 });

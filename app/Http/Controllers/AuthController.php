@@ -3,11 +3,12 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\Usuario;
+use App\Http\Traits\LogActionTrait;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Log; // Importamos la Facade Log
-use App\Models\Usuario; // Importamos el modelo Usuario
-use App\Http\Traits\LogActionTrait; // Importamos el Trait
+use Illuminate\Support\Facades\Log;
 
 class AuthController extends Controller
 {
@@ -15,8 +16,8 @@ class AuthController extends Controller
     use LogActionTrait;
 
     /**
-     * Constructor. Protege la mayoría de los métodos con el middleware 'auth:api',
-     * excepto el 'login' y 'register' que deben ser accesibles públicamente.
+     * Crea un nuevo AuthController.
+     * El middleware 'auth:api' se aplica a todos los métodos excepto 'login' y 'register'.
      */
     public function __construct()
     {
@@ -24,51 +25,48 @@ class AuthController extends Controller
     }
 
     /**
-     * Registra un nuevo usuario en el sistema.
-     * URL: POST /api/register
+     * Registra un nuevo Usuario.
      */
     public function register(Request $request)
     {
+        // Validación con campos en español, asumiendo que el Body JSON usa estos nombres.
         $validator = Validator::make($request->all(), [
             'nombre' => 'required|string|max:255',
-            'correo' => 'required|email|unique:usuarios,correo',
-            'clave' => 'required|string|min:6',
+            'correo' => 'required|string|email|max:255|unique:usuarios,correo', 
+            'clave' => 'required|string|min:6|confirmed', // Debe venir 'clave_confirmation'
         ]);
 
         if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
+            return response()->json($validator->errors(), 400);
         }
 
-        try {
-            // Hash de la contraseña antes de crear
-            $usuario = Usuario::create([
-                'nombre' => $request->nombre,
-                'correo' => $request->correo,
-                'clave' => bcrypt($request->clave), // USAR bcrypt para el hash
-            ]);
+        // Creación del usuario con campos en español
+        $usuario = Usuario::create([
+            'nombre' => $request->nombre,
+            'correo' => $request->correo,
+            'clave' => Hash::make($request->clave),
+            'rol' => 'user', // Rol por defecto
+        ]);
 
-            // Intentar generar token para el usuario recién registrado
-            $token = Auth::guard('api')->login($usuario);
+        // LOGUEO DE ACCIÓN: Registro de nuevo usuario
+        $this->logAction(
+            'register', 
+            "El usuario #{$usuario->id} con email '{$usuario->correo}' ha sido registrado.",
+            $usuario->id 
+        );
 
-            // Registrar la acción (solo id_usuario)
-            $this->logAction($usuario->id);
-
-            return $this->respondWithToken($token);
-
-        } catch (\Exception $e) {
-            Log::error("Error al registrar usuario: " . $e->getMessage());
-            return response()->json(['error' => 'No se pudo completar el registro.'], 500);
-        }
+        return response()->json([
+            'message' => 'Usuario registrado exitosamente',
+            'user' => $usuario
+        ], 201); // 201 Created es apropiado
     }
 
-
     /**
-     * Inicia sesión de un usuario y retorna un token JWT.
-     * URL: POST /api/login
+     * Obtiene un JWT Token con las credenciales dadas.
      */
     public function login(Request $request)
     {
-        // 1. Validar la petición de entrada
+        // Validación con campos en español (correo, clave)
         $validator = Validator::make($request->all(), [
             'correo' => 'required|email',
             'clave' => 'required|string|min:6',
@@ -78,75 +76,78 @@ class AuthController extends Controller
             return response()->json($validator->errors(), 422);
         }
 
-        // 2. Intentar autenticar y generar el token
-        // NOTA: 'password' es el campo esperado internamente por Laravel Auth/JWT.
+        // CRÍTICO: auth()->attempt() requiere un array de credenciales.
+        // Debemos mapear los campos del Request a los nombres de columna reales de la tabla 'usuarios'.
         $credentials = [
             'correo' => $request->correo,
-            'password' => $request->clave, 
+            'password' => $request->clave, // 'password' es el key que usa auth() para comparar con getAuthPassword()
         ];
 
-        // Autenticar y generar token
-        $token = Auth::guard('api')->attempt($credentials);
-
-        if (!$token) {
-            // Error de credenciales (correo o clave incorrectos)
-            return response()->json(['error' => 'No autorizado. Credenciales incorrectas.'], 401);
+        if (! $token = auth()->attempt($credentials)) {
+            // LOGUEO DE ACCIÓN: Intento de login fallido
+            $this->logAction(
+                'login_fail', 
+                "Intento de inicio de sesión fallido para el email: {$request->correo}."
+            );
+            return response()->json(['error' => 'No autorizado. Credenciales inválidas'], 401);
         }
 
-        // 3. Autenticación exitosa
-        $user = Auth::guard('api')->user();
+        // LOGUEO DE ACCIÓN: Login exitoso
+        $this->logAction(
+            'login_success', 
+            "Inicio de sesión exitoso. Usuario ID: " . auth()->user()->id
+        );
 
-        // Registrar el inicio de sesión
-        $this->logAction($user->id);
-
-        // Retornar la respuesta con el token y el tipo de token
         return $this->respondWithToken($token);
     }
 
     /**
      * Cierra la sesión del usuario (invalida el token).
-     * URL: POST /api/logout
      */
     public function logout()
     {
-        $user = Auth::guard('api')->user();
-        if ($user) {
-             // Registrar el cierre de sesión
-             $this->logAction($user->id);
-        }
+        // LOGUEO DE ACCIÓN: Cierre de sesión
+        $this->logAction(
+            'logout', 
+            "Cierre de sesión. Usuario ID: " . auth()->user()->id
+        );
         
-        Auth::guard('api')->logout();
+        auth()->logout();
 
         return response()->json(['message' => 'Sesión cerrada exitosamente']);
     }
 
     /**
-     * Refresca un token JWT expirado para obtener uno nuevo.
-     * URL: POST /api/refresh
+     * Refresca el token.
      */
     public function refresh()
     {
-        // Genera un nuevo token a partir del token actual y lo retorna
-        $newToken = Auth::guard('api')->refresh();
-        return $this->respondWithToken($newToken);
+        // LOGUEO DE ACCIÓN: Token refrescado
+         $this->logAction(
+            'token_refresh', 
+            "Token refrescado exitosamente. Usuario ID: " . auth()->user()->id
+        );
+        return $this->respondWithToken(auth()->refresh());
     }
 
     /**
-     * Retorna la estructura de respuesta con el token.
-     *
-     * @param  string $token
-     * @return \Illuminate\Http\JsonResponse
+     * Obtiene el usuario autenticado.
+     */
+    public function me()
+    {
+        return response()->json(auth()->user());
+    }
+
+    /**
+     * Obtiene la estructura del token.
      */
     protected function respondWithToken($token)
     {
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
-            // El tiempo de vida del token está definido en config/jwt.php (default: 60 minutos)
-            'expires_in' => Auth::guard('api')->factory()->getTTL() * 60,
-            'user' => Auth::guard('api')->user(),
+            'expires_in' => auth()->factory()->getTTL() * 60,
+            'user' => auth()->user()
         ]);
     }
-
-    // Se eliminó la función logAction() duplicada, ahora es heredada del Trait.
 }
