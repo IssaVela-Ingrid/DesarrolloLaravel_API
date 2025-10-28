@@ -9,29 +9,21 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Controlador para gestionar los registros de acciones (logs) en el sistema.
- * * NOTA: Aplicamos la protección de rol en el constructor para asegurar que
- * solo los administradores puedan acceder al historial de logs.
+ * * NOTA: La autorización de rol 'admin' se aplica mediante el middleware 'admin'
+ * en el archivo de rutas (api.php), por lo que hemos eliminado la comprobación 
+ * redundante en el constructor.
  */
 class RegistroController extends Controller
 {
     /**
-     * Constructor. Protege la ruta para que solo los administradores accedan.
+     * Constructor. ELIMINADO ya que la protección se hace en api.php.
      */
+    /*
     public function __construct()
     {
-        // 1. Requiere un token JWT válido para acceder.
-        $this->middleware('auth:api'); 
-
-        // 2. Autorización: Solo el rol 'admin' puede ver los registros.
-        $this->middleware(function ($request, $next) {
-            $user = Auth::guard('api')->user();
-
-            if (!$user || $user->rol !== 'admin') {
-                 return response()->json(['message' => 'Acceso no autorizado. Se requiere rol de administrador para ver el historial de logs.'], 403);
-            }
-            return $next($request);
-        });
+        // ... (middleware de autenticación y autorización eliminados)
     }
+    */
 
 
     /**
@@ -52,6 +44,8 @@ class RegistroController extends Controller
                                 ->get();
             
             // Ocultamos la 'clave' (contraseña) del usuario antes de devolver los datos.
+            // Esto es redundante si 'clave' está en $hidden del modelo, pero es una buena 
+            // práctica para asegurarse si la relación se cargó de forma lazy o eager.
             $registros->each(function ($registro) {
                 if ($registro->usuario) {
                     $registro->usuario->makeHidden('clave');

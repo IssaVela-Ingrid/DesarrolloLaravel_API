@@ -12,12 +12,12 @@ class Registro extends Model
     // Nombre de la tabla explícitamente definido
     protected $table = 'registros';
 
-    // ¡ACTUALIZACIÓN CRÍTICA!
-    // Ahora incluimos los campos para el tipo de acción y la descripción
+    // ✅ CORRECCIÓN CRÍTICA: Ajustamos los nombres de los campos
+    // para que coincidan con las columnas reales en la base de datos (accion y detalle).
     protected $fillable = [
         'id_usuario',    // Clave foránea al usuario que realizó la acción
-        'tipo_accion',   // Nuevo: Tipo de acción (ej: 'login_success', 'user_created', 'update_user')
-        'descripcion',   // Nuevo: Detalle de la acción (ej: 'Inicio de sesión exitoso. Usuario ID: 5')
+        'accion',        // Corregido: Tipo de acción (ej: 'login_success', 'user_created')
+        'detalle',       // Corregido: Detalle de la acción (ej: 'Inicio de sesión exitoso. Usuario ID: 5')
     ];
 
     /**

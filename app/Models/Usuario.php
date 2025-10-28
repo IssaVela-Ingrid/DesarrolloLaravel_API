@@ -70,15 +70,14 @@ class Usuario extends Authenticatable implements JWTSubject
     /**
      * Retorna un array de claves/valores personalizados para ser añadidos al JWT.
      */
-    public function getJWTCustomClaims(): array
+ public function getJWTCustomClaims(): array
     {
-        // Añade el ID y el rol al token para que el frontend pueda leerlos
+        // ✅ AJUSTE: Cambiamos 'user_id' a 'id_usuario' para que coincida con el campo de la DB
         return [
-            'user_id' => $this->id,
+            'id_usuario' => $this->id,
             'rol' => $this->rol,
         ];
     }
-
     // ------------------------------------------------------------------
     // Relaciones
     // ------------------------------------------------------------------

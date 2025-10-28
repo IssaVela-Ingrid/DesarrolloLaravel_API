@@ -11,34 +11,27 @@ use Illuminate\Support\Facades\Log;
 /**
  * Controlador para generar estadísticas y métricas del sistema, 
  * enfocándose en el registro de usuarios.
+ * * NOTA: La autorización de rol 'admin' se aplica mediante el middleware 'admin'
+ * en el archivo de rutas (api.php), por lo que hemos eliminado la comprobación 
+ * redundante en el constructor.
  */
 class EstadisticasController extends Controller
 {
     /**
-     * Constructor. Aplica middlewares de seguridad y autorización.
+     * Constructor. ELIMINADO ya que la protección se hace en api.php.
      */
+    /*
     public function __construct()
     {
-        // 1. Requiere un token JWT válido para acceder a cualquier método.
-        $this->middleware('auth:api'); 
-
-        // 2. Autorización: Solo el rol 'admin' puede ver las estadísticas.
-        $this->middleware(function ($request, $next) {
-            $user = Auth::guard('api')->user();
-
-            // Si no hay usuario o el rol no es 'admin', se deniega el acceso.
-            if (!$user || $user->rol !== 'admin') {
-                 return response()->json(['message' => 'Acceso no autorizado. Se requiere rol de administrador para ver las estadísticas.'], 403);
-            }
-            return $next($request);
-        });
+        // ... (middleware de autenticación y autorización eliminados)
     }
+    */
 
 
     /**
      * Obtiene estadísticas de registro de usuarios agrupadas por día, semana y mes.
      * URL: GET /api/estadisticas/registro-usuarios
-     * * @return \Illuminate\Http\JsonResponse
+     * @return \Illuminate\Http\JsonResponse
      */
     public function getRegistroStats()
     {
@@ -55,7 +48,7 @@ class EstadisticasController extends Controller
             ->get();
 
             // 2. Estadísticas de registro por SEMANA (Últimas 8 semanas)
-            // NOTA: YEARWEEK() es una función de MySQL. Esto funciona con MySQL/PostgreSQL.
+            // Se agrupa por el número de semana del año.
             $registrosPorSemana = Usuario::select(
                 DB::raw('YEARWEEK(created_at, 1) as periodo'), // '1' indica que la semana comienza en Lunes
                 DB::raw('COUNT(*) as total')
@@ -97,4 +90,34 @@ class EstadisticasController extends Controller
             ], 500);
         }
     }
+    
+    /**
+     * Placeholder para estadísticas globales (asumiendo que es una ruta planificada).
+     * URL: GET /api/estadisticas/global
+     * @return \Illuminate\Http\JsonResponse
+     */
+     public function getGlobalStats()
+     {
+         try {
+             $totalUsuarios = Usuario::count();
+             $totalAdmins = Usuario::where('rol', 'admin')->count();
+
+             return response()->json([
+                 'status' => 'success',
+                 'message' => 'Estadísticas globales recuperadas exitosamente.',
+                 'data' => [
+                     'total_usuarios' => $totalUsuarios,
+                     'total_admins' => $totalAdmins,
+                     // Agregar otras estadísticas globales aquí (e.g., total_logs, last_login_time, etc.)
+                 ]
+             ]);
+
+         } catch (\Exception $e) {
+            Log::error("Error al obtener estadísticas globales: " . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error al obtener estadísticas globales: ' . $e->getMessage(),
+            ], 500);
+        }
+     }
 }

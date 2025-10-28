@@ -14,60 +14,58 @@ use App\Models\Usuario;
 // En un proyecto real, se importarían las clases Mailables, por ejemplo:
 // use App\Mail\NotificacionUsuario;
 
+/**
+ * Controlador para la funcionalidad de comunicación (envío de correos).
+ * * NOTA: La autorización de rol 'admin' se aplica mediante el middleware 'admin'
+ * en el archivo de rutas (api.php), por lo que hemos eliminado la comprobación 
+ * redundante en el constructor.
+ */
 class ComunicacionController extends Controller
 {
     // Usamos el Trait para heredar el método logAction()
     use LogActionTrait;
 
     /**
-     * Constructor. Aplica middlewares de seguridad y autorización.
+     * Constructor. ELIMINADO ya que la protección se hace en api.php.
      */
+    /*
     public function __construct()
     {
-        // 1. Requiere un token JWT válido para acceder a cualquier método.
-        $this->middleware('auth:api');
-
-        // 2. Autorización: Solo el rol 'admin' puede usar esta función de comunicación.
-        $this->middleware(function ($request, $next) {
-            $user = Auth::guard('api')->user();
-
-            // Si no hay usuario o el rol no es 'admin', se deniega el acceso.
-            if (!$user || $user->rol !== 'admin') {
-                 return response()->json(['message' => 'Acceso no autorizado. Se requiere rol de administrador para enviar correos.'], 403);
-            }
-            return $next($request);
-        });
+        // ... (middleware de autenticación y autorización eliminados)
     }
+    */
+
 
     /**
      * Simula el envío de un correo electrónico a un usuario específico.
-     * Esta funcionalidad debe ser usada por un administrador para notificar.
-     * URL: POST /api/comunicacion/send-email (Protegido y Autorizado a 'admin')
+     * Esta funcionalidad debe ser usada por administradores.
+     * URL: POST /api/comunicacion/enviar
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function sendEmail(Request $request)
+    public function enviarCorreo(Request $request)
     {
-        // El usuario ya fue verificado como 'admin' en el constructor
-        $usuarioRemitenteId = Auth::guard('api')->id();
-
-        // 1. Validación de la solicitud
+        // 1. Validación
         $validator = Validator::make($request->all(), [
-            // id_usuario_destino debe ser requerido y existir en la tabla de usuarios
-            'id_usuario_destino' => 'required|integer|exists:usuarios,id',
+            'id_usuario_destino' => 'required|exists:usuarios,id',
             'asunto' => 'required|string|max:255',
-            'cuerpo_mensaje' => 'required|string|max:5000',
+            'cuerpo_mensaje' => 'required|string',
         ]);
 
         if ($validator->fails()) {
-            return response()->json($validator->errors(), 400);
+            return response()->json($validator->errors(), 422);
         }
 
         try {
-            // Obtener el usuario al que se le enviará el correo
+            // El usuario que ejecuta la acción es el administrador autenticado
+            $usuarioRemitenteId = Auth::guard('api')->user()->id;
             $usuarioDestino = Usuario::find($request->id_usuario_destino);
 
-            // 2. Lógica de Envío de Correo (Actualizar esto para usar Mail::send en producción)
+            // 2. Lógica de Envío (Simulación)
             /*
-            // DESCOMENTAR en producción: Asumiendo que has de tener una clase NotificacionUsuario (Mailable) configurada.
+            // DESCOMENTAR en un proyecto real con el Mailable configurado.
+            // Instrucción: Asumiendo que has de tener una clase NotificacionUsuario (Mailable) configurada.
             Mail::to($usuarioDestino->correo)->send(new NotificacionUsuario(
                 $request->asunto,
                 $request->cuerpo_mensaje,
