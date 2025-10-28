@@ -3,44 +3,47 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable; // Cambiado a Authenticatable para claridad
+use Illuminate\Foundation\Auth\User as Authenticatable; // Usar Authenticatable para claridad
 use Illuminate\Notifications\Notifiable;
-use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject; 
-use App\Models\Registro; 
+use PHPOpenSourceSaver\JWTAuth\Contracts\JWTSubject;
+use App\Models\Registro;
 
-// Renombrado de User a Usuario
-class Usuario extends Authenticatable implements JWTSubject 
+/**
+ * Modelo para la entidad Usuario, extendiendo Authenticatable para Laravel Auth
+ * e implementando JWTSubject para la autenticación con JWT.
+ */
+class Usuario extends Authenticatable implements JWTSubject
 {
     use HasFactory, Notifiable;
 
     // Nombre de la tabla: 'usuarios'
-    protected $table = 'usuarios'; 
+    protected $table = 'usuarios';
     protected $primaryKey = 'id';
-    public $timestamps = true; 
+    public $timestamps = true;
 
     protected $fillable = [
-        'nombre', 
+        'nombre',
         'correo',
         'clave', // Usa 'clave' para la contraseña
-        'rol',   // Campo para la autorización (rol por defecto 'user')
+        'rol',   // Campo para la autorización (rol por defecto 'user' o 'admin')
     ];
 
     protected $hidden = [
-        'clave', // Oculta 'clave'
+        'clave', // Oculta 'clave' en las respuestas JSON
         'remember_token',
     ];
 
+    // No se usan casts automáticos de hashing aquí, ya que el hashing se maneja
+    // manualmente en el registro y a través de getAuthPassword() en el login/auth.
     protected function casts(): array
     {
-        // ¡CRÍTICO! ELIMINADO: 'clave' => 'hashed', 
-        // JWT/Auth manejan el hash a través de getAuthPassword() y Hash::make en el controlador.
         return [];
     }
-    
+
     // ------------------------------------------------------------------
     // Métodos de Autenticación
     // ------------------------------------------------------------------
-    
+
     /**
      * Define el campo de contraseña utilizado para la autenticación.
      * (¡Necesario para usar 'clave' en lugar del default 'password'!)
@@ -51,16 +54,22 @@ class Usuario extends Authenticatable implements JWTSubject
         // Indica que 'clave' es el campo de contraseña
         return $this->clave;
     }
-    
+
     // ------------------------------------------------------------------
     // Métodos de JWTSubject
     // ------------------------------------------------------------------
-    
+
+    /**
+     * Obtiene el identificador del usuario que se almacenará en el token.
+     */
     public function getJWTIdentifier(): mixed
     {
         return $this->getKey();
     }
 
+    /**
+     * Retorna un array de claves/valores personalizados para ser añadidos al JWT.
+     */
     public function getJWTCustomClaims(): array
     {
         // Añade el ID y el rol al token para que el frontend pueda leerlos
@@ -69,7 +78,7 @@ class Usuario extends Authenticatable implements JWTSubject
             'rol' => $this->rol,
         ];
     }
-    
+
     // ------------------------------------------------------------------
     // Relaciones
     // ------------------------------------------------------------------

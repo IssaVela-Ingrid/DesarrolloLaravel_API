@@ -1,15 +1,3 @@
-# 1. Este comando crea el archivo de migración (si aún no lo creó)
-php artisan make:migration add_rol_to_usuarios_table --table=usuarios
-
-# 2. Luego, ejecuta todas las migraciones pendientes
-php artisan migrate
-
-Si ya habías creado el archivo de migración antes (aunque fallara el `make:migration`), salta el primer comando y ejecuta directamente:
-
-```bash
-php artisan migrate
-
----
 <?php
 
 use Illuminate\Database\Migrations\Migration;
