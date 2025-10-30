@@ -3,28 +3,24 @@
 namespace App\Http\Controllers;
 
 use App\Models\Usuario;
-use Illuminate\Http\Request;
+use Illuminate\Http\Request; // Sigue siendo necesario para el index y destroy
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use App\Http\Traits\LogActionTrait;
 
+// Importamos los Form Requests dedicados
+use App\Http\Requests\Users\UsuarioStoreRequest;
+use App\Http\Requests\Users\UsuarioUpdateRequest;
+
 /**
  * Controlador para la gestión de usuarios (CRUD) por parte de un administrador.
- * * NOTA: La autorización de rol 'admin' se aplica mediante el middleware 'admin'
- * en el archivo de rutas (api.php), por lo que hemos eliminado las comprobaciones
- * redundantes en este controlador.
+ * El acceso está protegido por el middleware 'admin' en api.php.
  */
 class UsuarioController extends Controller
 {
     // Usa el Trait para loguear acciones en la base de datos
     use LogActionTrait;
-
-    /*
-     * ELIMINAMOS: Constructor y el método checkAdminAuthorization() 
-     * ya que la protección de acceso se hace por el middleware 'admin' en api.php.
-     */
 
     /**
      * Muestra una lista de todos los usuarios (Solo Admin).
@@ -44,37 +40,25 @@ class UsuarioController extends Controller
 
     /**
      * Crea un nuevo usuario (Solo Admin).
+     * * Usamos UsuarioStoreRequest para manejar la validación y la autorización de rol.
      * URL: POST /api/usuarios
      */
-    public function store(Request $request)
+    public function store(UsuarioStoreRequest $request)
     {
-        $currentUser = Auth::guard('api')->user();
+        // La validación (reglas y errores) y la autorización de rol ya se manejaron en UsuarioStoreRequest.
 
-        // 1. Validación
-        $validator = Validator::make($request->all(), [
-            'nombre' => 'required|string|max:255',
-            'correo' => 'required|string|email|max:255|unique:usuarios,correo',
-            'clave' => 'required|string|min:6|confirmed', // 'confirmed' busca 'clave_confirmation'
-            'rol' => 'required|string|in:admin,user',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
-        }
-
-        // 2. Creación
         $usuario = Usuario::create([
             'nombre' => $request->nombre,
             'correo' => $request->correo,
-            // Hashing manual de la contraseña
-            'clave' => Hash::make($request->clave), 
-            'rol' => $request->rol,
+            'clave' => Hash::make($request->clave), // Asegurarse de usar Hash::make()
+            'rol' => $request->rol ?? 'normal', // Si no se envía el rol, por defecto es 'normal'
         ]);
 
-        // 3. Loguear la acción
+        // 1. Loguear la acción
+        $currentUser = Auth::guard('api')->user();
         $this->logAction(
             'create_user_admin', 
-            'Administrador ID: ' . $currentUser->id . ' creó usuario ID: ' . $usuario->id . ' con rol: ' . $usuario->rol,
+            'Administrador ID: ' . $currentUser->id . ' creó nuevo usuario ID: ' . $usuario->id,
             $currentUser->id
         );
 
@@ -85,7 +69,7 @@ class UsuarioController extends Controller
     }
 
     /**
-     * Muestra la información de un usuario específico (Solo Admin).
+     * Muestra un usuario específico (Solo Admin).
      * URL: GET /api/usuarios/{id}
      */
     public function show(string $id)
@@ -98,50 +82,36 @@ class UsuarioController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'usuario' => $usuario
+            'message' => 'Usuario recuperado exitosamente',
+            'data' => $usuario
         ]);
     }
 
     /**
      * Actualiza un usuario específico (Solo Admin).
+     * * Usamos UsuarioUpdateRequest para manejar la validación y la autorización de rol.
      * URL: PUT/PATCH /api/usuarios/{id}
      */
-    public function update(Request $request, string $id)
+    public function update(UsuarioUpdateRequest $request, string $id)
     {
+        // La validación y la autorización de rol ya se manejaron en UsuarioUpdateRequest.
+
         $usuario = Usuario::find($id);
         $currentUser = Auth::guard('api')->user();
-        
+
         if (!$usuario) {
             return response()->json(['message' => 'Usuario no encontrado para actualizar'], 404);
         }
 
-        // 1. Validación dinámica
-        $rules = [
-            'nombre' => 'sometimes|required|string|max:255',
-            'correo' => 'sometimes|required|string|email|max:255|unique:usuarios,correo,' . $id,
-            'rol' => 'sometimes|required|string|in:admin,user',
-        ];
-
-        // Solo se valida la clave si se proporciona
-        if ($request->has('clave')) {
-            $rules['clave'] = 'nullable|string|min:6|confirmed';
-        }
-
-        $validator = Validator::make($request->all(), $rules);
-
-        if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
-        }
-
-        // 2. Preparar los datos para la actualización
+        // 1. Recolectar solo los campos que vienen en la solicitud (método 'only' para seguridad)
         $data = $request->only('nombre', 'correo', 'rol');
 
-        // Si se proporciona la clave, hashearla antes de actualizar
-        if ($request->has('clave') && !empty($request->clave)) {
+        // 2. Si se proporciona la clave, hashearla.
+        if ($request->has('clave')) {
             $data['clave'] = Hash::make($request->clave);
         }
 
-        // 3. Actualizar
+        // 3. Actualizar el usuario
         $usuario->update($data);
 
         // 4. Loguear la acción
@@ -185,6 +155,6 @@ class UsuarioController extends Controller
             $currentUser->id
         );
 
-        return response()->json(['message' => 'Usuario eliminado exitosamente'], 200);
+        return response()->json(['message' => 'Usuario eliminado exitosamente']);
     }
 }

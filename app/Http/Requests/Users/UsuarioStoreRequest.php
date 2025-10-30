@@ -41,6 +41,22 @@ class UsuarioStoreRequest extends FormRequest
             'correo' => 'required|string|email|max:255|unique:usuarios,correo',
             // Corregido para usar 'clave' por coherencia.
             'clave' => 'required|string|min:6', 
+            // 'rol' es opcional, pero si se envía debe ser uno de los permitidos.
+            'rol' => 'sometimes|string|in:admin,normal', 
+        ];
+    }
+    
+    /**
+     * Define mensajes de error personalizados.
+     *
+     * @return array
+     */
+    public function messages(): array
+    {
+        return [
+            'correo.unique' => 'Este correo electrónico ya se encuentra en uso.',
+            'clave.min' => 'La contraseña debe tener al menos 6 caracteres.',
+            'rol.in' => 'El rol proporcionado no es válido. Debe ser "admin" o "normal".',
         ];
     }
 }

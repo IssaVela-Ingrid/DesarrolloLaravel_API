@@ -41,7 +41,7 @@ class Handler extends ExceptionHandler
      */
     protected function unauthenticated($request, AuthenticationException $exception)
     {
-        // CRÍTICO: Si la solicitud espera JSON (típico de APIs) O si el guard fallido es 'api',
+        // <comment-tag id="1">CRÍTICO: Si la solicitud espera JSON (típico de APIs) O si el guard fallido es 'api',</comment-tag id="1">
         // devolvemos un JSON 401 en lugar de redirigir a 'login'.
         if ($request->expectsJson() || in_array('api', $exception->guards())) {
             return response()->json(['message' => 'No autenticado. Se requiere un token de acceso válido.'], 401);

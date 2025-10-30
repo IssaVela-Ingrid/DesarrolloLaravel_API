@@ -3,11 +3,11 @@
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use App\Models\Usuario; // CRÍTICO: Usaremos el modelo 'Usuario'
-use Illuminate\Support\Facades\Hash;
+use App\Models\Usuario; // Usamos el modelo 'Usuario'
+use Illuminate\Support\Facades\Hash; // CRÍTICO: Importar Hash para encriptar la clave
 use Carbon\Carbon;
 
-class UsuarioSeeder extends Seeder // CRÍTICO: El nombre de la clase debe ser UsuarioSeeder
+class UsuarioSeeder extends Seeder
 {
     /**
      * Run the database seeds.
@@ -17,22 +17,22 @@ class UsuarioSeeder extends Seeder // CRÍTICO: El nombre de la clase debe ser U
     public function run()
     {
         // 1. Crear Usuario Administrador para el Login
-        // Incluimos el campo 'telefono' y usamos 'nombre'.
         Usuario::create([ 
-            'nombre' => 'Admin Test', // <-- CORREGIDO: Usamos 'nombre'
+            'nombre' => 'Admin Principal',
             'correo' => 'admin@test.com', 
-            'clave' => '123456', 
+            'clave' => Hash::make('123456'), // 🔑 CRÍTICO: Encriptar la clave
             'telefono' => '5551234567', 
+            'rol' => 'admin', // 🎯 Asignar el rol de administrador
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
         ]);
 
-        $this->command->info('Usuario Admin (admin@test.com / 123456) creado.');
+        $this->command->info('Usuario Admin (admin@test.com / 123456) y rol "admin" creado.');
 
-        // 2. Crear Usuarios de Prueba para Estadísticas (100 usuarios)
+        // 2. Crear Usuarios de Prueba (100 usuarios)
         $this->createHistoricalUsers(100);
 
-        $this->command->info('100 usuarios de prueba con historial de registro creados.');
+        $this->command->info('100 usuarios de prueba con rol "user" y historial de registro creados.');
     }
 
     /**
@@ -41,27 +41,22 @@ class UsuarioSeeder extends Seeder // CRÍTICO: El nombre de la clase debe ser U
      */
     private function createHistoricalUsers(int $count)
     {
-        // Lista de nombres y apellidos para variar los usuarios de prueba
+        // ... (Tu lógica para generar datos aleatorios)
         $names = ['Alejandro', 'Brenda', 'Carlos', 'Diana', 'Eduardo', 'Fernanda', 'Gabriel', 'Hilda'];
         $lastNames = ['Gomez', 'Rodriguez', 'Perez', 'Lopez', 'Martinez', 'Sanchez', 'Ramirez', 'Flores'];
 
         for ($i = 0; $i < $count; $i++) {
-            // Generar una fecha aleatoria entre 3 meses atrás y hoy
             $randomDate = Carbon::now()->subMonths(3)->addDays(rand(0, 90));
-
-            // Generar nombre y apellido rotando sobre el array
             $firstName = $names[$i % count($names)];
             $lastName = $lastNames[$i % count($lastNames)];
-            
-            // Simular un número de teléfono de prueba con un formato genérico
             $phoneSuffix = str_pad($i, 4, '0', STR_PAD_LEFT); 
             
             Usuario::create([ 
-                // Genera nombres como: Alejandro Gomez (1), Brenda Rodriguez (2), etc.
-                'nombre' => $firstName . ' ' . $lastName . ' (' . ($i + 1) . ')', // <-- CORREGIDO: Usamos 'nombre'
-                'correo' => 'user' . ($i + 1) . '@test.com', // Usamos 'correo'
-                'clave' => 'password', // Usamos 'clave'
-                'telefono' => '555-555-' . $phoneSuffix, // Teléfono simulado
+                'nombre' => $firstName . ' ' . $lastName . ' (' . ($i + 1) . ')',
+                'correo' => 'user' . ($i + 1) . '@test.com',
+                'clave' => Hash::make('password'), // 🔑 Encriptar la clave
+                'telefono' => '555-555-' . $phoneSuffix, 
+                'rol' => 'user', // 🎯 Asignar el rol de usuario estándar
                 'created_at' => $randomDate,
                 'updated_at' => $randomDate,
             ]);

@@ -44,52 +44,61 @@ class AuthController extends Controller
         $usuario = Usuario::create([
             'nombre' => $request->nombre,
             'correo' => $request->correo,
+            // Asumo que el modelo Usuario usa 'clave' como fillable y no 'password'
             'clave' => Hash::make($request->clave),
-            'rol' => 'user', // Rol por defecto
+            // Valor por defecto en la BD debe ser 'normal', pero lo aseguramos aquí:
+            'rol' => 'user', 
         ]);
-
-        // LOGUEO DE ACCIÓN: Registro de nuevo usuario
+        
+        // Logueo de acción: Registro exitoso
         $this->logAction(
             'register', 
-            "El usuario #{$usuario->id} con email '{$usuario->correo}' ha sido registrado.",
-            $usuario->id 
+            "Registro exitoso de nuevo usuario. ID: {$usuario->id}. Rol: {$usuario->rol}",
+            $usuario->id // El ID del usuario que se acaba de registrar
         );
 
-        return response()->json([
-            'message' => 'Usuario registrado exitosamente',
-            'user' => $usuario
-        ], 201); // 201 Created es apropiado
+
+        // Se puede retornar el token al registrarse automáticamente
+        $token = auth()->attempt(['correo' => $request->correo, 'password' => $request->clave]);
+
+        return $this->respondWithToken($token, 'Usuario registrado y logueado exitosamente');
     }
 
     /**
-     * Obtiene un JWT Token con las credenciales dadas.
+     * Inicia la sesión del usuario y retorna el token JWT.
      */
     public function login(Request $request)
     {
-        // Validación con campos en español (correo, clave)
+        // Validación de los campos de login (correo, clave)
         $validator = Validator::make($request->all(), [
-            'correo' => 'required|email',
-            'clave' => 'required|string|min:6',
+            'correo' => 'required|string|email',
+            'clave' => 'required|string',
         ]);
 
         if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
+            return response()->json($validator->errors(), 422); // Unprocessable Entity
         }
 
-        // CRÍTICO: auth()->attempt() requiere un array de credenciales.
-        // Debemos mapear los campos del Request a los nombres de columna reales de la tabla 'usuarios'.
+        // Recuperar el correo y la clave
         $credentials = [
             'correo' => $request->correo,
-            'password' => $request->clave, // 'password' es el key que usa auth() para comparar con getAuthPassword()
+            // Importante: El campo en la solicitud es 'clave'
+            'password' => $request->clave, // JWTAuth espera 'password' en el array de credenciales
         ];
 
+        // Intentar la autenticación con el guard 'api'
+        // Si las credenciales son incorrectas, attempt() retorna false.
         if (! $token = auth()->attempt($credentials)) {
-            // LOGUEO DE ACCIÓN: Intento de login fallido
+            // Logueo de acción: Intento de login fallido
             $this->logAction(
-                'login_fail', 
-                "Intento de inicio de sesión fallido para el email: {$request->correo}."
+                'login_failed',
+                "Intento de inicio de sesión fallido para el correo: {$request->correo}. Clave incorrecta.",
+                null // No hay usuario autenticado, por eso es null
             );
-            return response()->json(['error' => 'No autorizado. Credenciales inválidas'], 401);
+            
+            // ✅ CORRECCIÓN: Usar un formato JSON estándar con clave:valor.
+            // La respuesta anterior era: ['errorCredenciales inválidas']
+            return response()->json(['error' => 'Credenciales inválidas'], 401); 
         }
 
         // LOGUEO DE ACCIÓN: Login exitoso
@@ -141,9 +150,10 @@ class AuthController extends Controller
     /**
      * Obtiene la estructura del token.
      */
-    protected function respondWithToken($token)
+    protected function respondWithToken($token, $message = 'Inicio de sesión exitoso')
     {
         return response()->json([
+            'message' => $message,
             'access_token' => $token,
             'token_type' => 'bearer',
             'expires_in' => auth()->factory()->getTTL() * 60,

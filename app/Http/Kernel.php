@@ -3,6 +3,7 @@
 namespace App\Http;
 
 use Illuminate\Foundation\Http\Kernel as HttpKernel;
+use Illuminate\Support\Facades\Log; // Importar la fachada Log
 
 class Kernel extends HttpKernel
 {
@@ -63,17 +64,26 @@ class Kernel extends HttpKernel
         'auth:api' => \PHPOpenSourceSaver\JWTAuth\Http\Middleware\Authenticate::class, // Alias principal para proteger rutas
         
         // ====================================================================
-        // MIDDLEWARE DE ROL (CRÍTICO para Route::middleware('admin'))
+        // MIDDLEWARE DE ROL (CRÍTICO para Route::middleware('rol.admin'))
         // ====================================================================
         // 1. Alias genérico de rol (ej: 'role:user')
-        'role' => \App\Http\Middleware\RoleMiddleware::class, 
+        'permisos' => \App\Http\Middleware\RoleMiddleware::class,
         
-        // 2. Alias específico para Administrador.
-        // Mapea el alias 'admin' de tus rutas a 'RoleMiddleware' pasando el argumento 'admin'.
-        'admin' => \App\Http\Middleware\RoleMiddleware::class . ':admin', 
         // ====================================================================
     ];
     
+    // =========================================================================
+    // DEBUG: Función para imprimir el array de Middlewares y detener la ejecución
+    // =========================================================================
+    public function getRouteMiddleware()
+    {
+        // Enviar el array a la consola o al log
+        dump($this->routeMiddleware); 
+        // Detener la ejecución para ver el resultado
+        exit;
+    }
+
+
     /**
      * La lista de prioridad de middleware.
      *

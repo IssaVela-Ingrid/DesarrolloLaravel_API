@@ -30,64 +30,44 @@ Route::get('/', function () {
 
 
 // =========================================================================
-// GRUPO DE AUTENTICACIÓN (URL: /api/auth/...)
+// GRUPO DE AUTENTICACIÓN Y PROTECCIÓN BÁSICA (URL: /api/auth/...)
 // =========================================================================
 Route::controller(AuthController::class)->prefix('auth')->group(function () {
     // --- RUTAS PÚBLICAS (NO requieren token) ---
-    // URL: /api/auth/login, /api/auth/register
     Route::post('login', 'login');
     Route::post('register', 'register');
 
-    // --- RUTAS PROTEGIDAS (Requieren Token JWT: 'auth:api') ---
+    // --- RUTAS PROTEGIDAS (Requieren Token JWT 'auth:api') ---
     Route::middleware('auth:api')->group(function () {
-        // URL: /api/auth/logout, /api/auth/refresh, /api/auth/me
         Route::post('logout', 'logout');
         Route::post('refresh', 'refresh');
-        Route::get('me', 'me');
+        Route::get('me', 'me'); // Obtener el perfil del usuario autenticado
     });
 });
 
 
 // =========================================================================
-// GRUPO DE RUTAS PROTEGIDAS Y ADMINISTRATIVAS (Requieren 'auth:api')
+// RUTAS PROTEGIDAS DE ADMINISTRADOR (Requieren 'auth:api' Y 'role:admin')
 // =========================================================================
-Route::middleware(['auth:api'])->group(function () {
+// ⚠️ CAMBIO CRÍTICO: Usamos un array con los dos middlewares: 
+// 1. 'auth:api': Verifica el token JWT.
+// 2. 'role:admin': Llama a RoleMiddleware con el parámetro 'admin'.
+Route::middleware(['auth:api', 'permisos:admin'])->group(function () {
+    
+    // CRUD de Usuarios (URL: /api/usuarios)
+    // Permite a los administradores gestionar usuarios (index, show, update, destroy, store)
+    Route::apiResource('usuarios', UsuarioController::class)->except(['create', 'edit', 'show']);
 
-    // --- CRUD DE USUARIO (Acceso general al propio perfil) ---
-    // El 'store' (crear) se maneja en 'auth/register'.
-    // Las rutas de recursos aquí no están explícitamente definidas porque
-    // la mayoría de las operaciones CRUD son para el rol 'admin'.
-    // Si un usuario necesita ver/editar SU propio perfil, se añadirían rutas aquí.
-    // Dejaremos solo las rutas de administrador por simplicidad, asumiendo
-    // que el usuario usa /api/auth/me para ver su info.
+    // Rutas de Registros/Logs (URL: /api/registros)
+    Route::get('registros', [RegistroController::class, 'index']);
 
-    // --- GRUPO DE ADMINISTRADOR (Requiere Token JWT y Rol 'admin') ---
-    Route::middleware('admin')->group(function () {
-
-        // CRUD de Usuarios (URL: /api/usuarios)
-        // Permite a los administradores gestionar usuarios (index, show, update, destroy, store)
-        // Nota: Si 'register' es solo para usuarios, el 'store' del resource
-        // permite a los admins crear usuarios. Mantenemos el resource completo.
-        Route::apiResource('usuarios', UsuarioController::class)->except(['create', 'edit']);
-
-
-        // Rutas de Registros/Logs (URL: /api/registros)
-        Route::get('registros', [RegistroController::class, 'index']);
-
-
-        // Estadísticas (URL: /api/estadisticas/...)
-        Route::controller(EstadisticasController::class)->prefix('estadisticas')->group(function () {
-            // URL: /api/estadisticas/global
-            // Corregido: Apunta a 'getGlobalStats' (asumiendo este nombre para las globales)
-            Route::get('global', 'getGlobalStats'); 
-            
-            // URL: /api/estadisticas/registros
-            // Corregido: Apunta al método existente 'getRegistroStats' en EstadisticasController
-            Route::get('registros', 'getRegistroStats');
-        });
-
-
-        // Comunicación (URL: /api/comunicacion/enviar)
-        Route::post('comunicacion/enviar', [ComunicacionController::class, 'enviarCorreo']);
+    // Estadísticas (URL: /api/estadisticas/...)
+    Route::controller(EstadisticasController::class)->prefix('estadisticas')->group(function () {
+        Route::get('global', 'getGlobalStats'); 
+        Route::get('registros', 'getRegistroStats');
     });
+
+    // Comunicación (URL: /api/comunicacion/enviar)
+    Route::post('comunicacion/enviar', [ComunicacionController::class, 'enviarCorreo']);
+    
 });
